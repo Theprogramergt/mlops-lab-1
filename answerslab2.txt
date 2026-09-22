@@ -1,0 +1,29 @@
+Lab 2 - Answers
+
+Question 1: Look at pyproject.toml and uv.lock. What changed?
+Added mlflow, torch, torchvision, scikit-learn as dependencies, plus a setting to use the CPU-only version of torch/torchvision instead of the large default GPU version. uv.lock was updated to lock the exact versions of everything.
+
+Question 2: What is --backend-store-uri used for? What is --default-artifact-root used for? What is the difference between the metadata mlflow stores and the artifacts it stores?
+--backend-store-uri is where MLflow saves run metadata (params, metrics, run info) - a local SQLite database file. --default-artifact-root is where it saves the actual output files, like the trained model - a local folder. Metadata is small structured data used to build tables and charts. Artifacts are the real files a run produces.
+
+Question 3: Why shouldn't mlflow.db and mlruns/ be tracked by git, and why shouldn't they be tracked by dvc either?
+They are just local logs that get regenerated every time training runs. They are not source code, so they don't belong in git. They are not a fixed dataset either, so they don't belong in dvc. Tracking them would just clutter the repo with constant changes.
+
+Question 4: What happens the first time you call set_experiment with a name that doesn't exist yet?
+MLflow creates it automatically. The terminal showed: "Experiment with name 'food11' does not exist. Creating a new experiment." It then appeared in the MLflow UI right away.
+
+Question 5: What is the difference between mlflow.log_param and mlflow.log_metric? Why does log_metric take a step argument and log_param doesn't?
+log_param logs a setting that stays fixed for the whole run, like learning rate, logged once. log_metric logs a value that changes during training, like loss or accuracy, logged repeatedly. step exists so MLflow knows which epoch each metric value belongs to, so it can draw a chart over time. Params don't change, so there is no time dimension needed.
+
+Question 6: Open the run in the mlflow UI. Find the params, the metric charts, and the logged model artifact. Where does the model artifact actually live on disk?
+The params, metric charts, and model artifact are all visible on the run's page in the MLflow UI. On disk, the model is saved under ./mlruns/experiment_id/run_id/artifacts/model/, since --default-artifact-root ./mlruns was set when starting the server.
+
+Question 7: Which learning rate gave the best val_accuracy? Is higher always better?
+lr=0.0001 gave the best result, about 82 percent test accuracy, with val_accuracy climbing smoothly each epoch. Higher is not always better. lr=0.01 was the worst, about 15 percent accuracy, because the learning rate was too high for the model to properly learn. lr=0.001 was in between, about 60 percent, but bounced around between epochs instead of improving steadily.
+
+Question 8: Use the parallel coordinates plot on the compare page to look at lr, batch_size and val_accuracy together. What pattern do you see?
+val_accuracy is much more sensitive to learning rate than to batch size. Changing batch size from 32 to 64 barely changed accuracy. Changing learning rate changed accuracy dramatically, from about 15 percent at the highest rate to about 82 percent at the lowest rate tested.
+
+Question 9: Sort the runs table by val_accuracy descending. Which run is the best one? Note its run ID.
+The best run is wistful-moth-721, with lr=0.0001, batch_size=32, epochs=5, reaching val_accuracy about 0.7755 and test_accuracy about 0.8212.
+Run ID: 0f7eccacd4564b6a990c8bae28cbefc9
