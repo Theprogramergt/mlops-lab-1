@@ -8,15 +8,22 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.141.1",
     "mlflow>=3.16.1",
     "pillow>=12.3.0",
+    "python-multipart>=0.0.32",
     "scikit-learn>=1.9.1",
     "torch>=2.14.0",
     "torchvision>=0.29.0",
+    "uvicorn>=0.53.0",
 ]
 
 [project.scripts]
 mlops-lab-1 = "mlops_lab_1:main"
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
 
 [build-system]
 requires = ["uv_build>=0.12.13,<0.13.0"]
