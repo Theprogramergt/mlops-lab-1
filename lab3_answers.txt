@@ -1,0 +1,99 @@
+Lab 3 - Containerizing the model with Docker - Answers
+
+Question 1:
+My best run was registered as version 1 of the model "food11" (later re-registered
+as version 3 after fixing an artifact-serving issue, see Question 9 notes below).
+A run's logged model artifact is just a set of files attached to one specific
+training run, only reachable through that run's ID. A registered model is a
+separate object with its own name and version history, independent of any single
+run, so other systems (like a serving API) can refer to it by a stable name
+instead of a run ID that could change.
+
+Question 2:
+The old stages (Staging/Production) are replaced by aliases, mutable pointers
+like "champion" that can point to any version at any time, plus free-form tags
+for anything else you want to track. A model is versioned separately from its
+run because a run is tied to one specific training experiment, while a
+registered model version is meant to be deployed and referenced long-term. An
+alias is more flexible than a fixed stage name because you can move it to a
+different version instantly (e.g. after retraining) without changing any code
+that references it, whereas a stage name like "Production" only gave you a
+handful of fixed states to work with.
+
+Question 3:
+Loading through an mlflow model URI (models:/food11@champion) means the serving
+code never has to know which version number or file path the model actually
+lives at. To serve a newer version, I just move the "champion" alias to the new
+version number in the registry; the serving code and the running container
+don't change at all. If I'd pointed directly at a .pth file, I'd have to edit
+the code and rebuild/redeploy every time the model changed.
+
+Question 4:
+Copying pyproject.toml/uv.lock and running uv sync before copying the rest of
+the source code lets Docker cache the dependency-install layer separately from
+the source code layer. If I only change a line in serve.py, Docker reuses the
+cached dependency layer (since pyproject.toml/uv.lock didn't change) and only
+re-runs the fast "copy source" step and anything after it. If everything were
+copied at once, any source change would invalidate the cache and force a full
+dependency reinstall every time.
+
+Question 5:
+My image is roughly 1.57 GB, and almost all of that (1.43 GB) is a single layer:
+the copied .venv with torch, mlflow, scikit-learn, pandas, fastapi, etc. The
+Debian/Python base layers add about 134 MB, and my actual source code is only
+about 49 KB. A single-stage build would add on top of this the uv installer
+itself plus pip/uv's build caches and any leftover build artifacts, all baked
+permanently into the final image since there's no second stage to leave them
+behind. My multi-stage build discards the builder stage entirely after copying
+out just the finished virtual environment, so none of that extra footprint ends
+up in the final image. The size difference isn't huge in absolute terms here
+because torch dominates either way, but it's still the correct practice.
+
+Question 6:
+Without .dockerignore, Docker has to package the whole project directory,
+including data/ (large) and mlruns/ (grows with every run), into the build
+context before the build even starts, which makes the context transfer slower
+and can bloat build times. The folder most likely to actually break the build
+is .venv/, since it's a Windows-built virtual environment and would be useless
+(and potentially conflicting) inside a Linux container image.
+
+Question 7:
+The container has its own isolated network namespace, so 127.0.0.1 inside the
+container points back to the container itself, not to the host machine. The
+mlflow server is running on the host, so the container can't reach it through
+127.0.0.1. host.docker.internal is a special DNS name that Docker Desktop
+resolves to the host machine's IP address from inside a container, so requests
+sent there land on the host.
+
+Question 8:
+Yes. I stopped the container and started it again from the same image with no
+rebuild, and it loaded the model correctly and served predictions normally. This
+shows that only the code, dependencies, and Python environment are baked into
+the image at build time. The actual trained model weights are not baked in at
+all; they are fetched fresh from the mlflow server every time the container
+starts, because serve.py loads the model at startup, not at build time. That
+means moving the "champion" alias to a new model version doesn't require
+rebuilding the image at all, just restarting the container.
+
+Question 9:
+Right now the image only exists in my local Docker cache; it has never been
+pushed anywhere. A CI runner or a Kubernetes cluster has no way to pull an
+image that isn't published to a registry. To make it reliably reproducible
+elsewhere, I'd need to push the image to a registry (e.g. Docker Hub or a
+private registry), tag it properly (ideally with something more specific than
+"latest", like a git commit SHA or a version number), and reference that exact
+tag/digest wherever the image needs to be pulled from.
+
+Extra note (real debugging encountered during this lab):
+When running the container against my local mlflow server, I hit an additional
+real-world issue not covered directly by the questions: mlflow's built-in
+security middleware rejected requests from the container because the Host
+header (host.docker.internal:5000) wasn't in its default allowed-hosts list,
+returning a 403 "possible DNS rebinding attack" error. I fixed this by starting
+mlflow with --allowed-hosts including host.docker.internal:5000. I also hit an
+issue where the registered model's artifact was stored as a local file path
+that the container couldn't resolve (since containers can't see the host's
+filesystem); I fixed this by restarting mlflow with --serve-artifacts and a
+proxy-scheme artifact root (mlflow-artifacts:/), then re-logging the model so
+its artifacts were uploaded through the HTTP proxy instead of referenced by
+local path.
