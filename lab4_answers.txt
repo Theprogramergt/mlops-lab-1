@@ -1,0 +1,23 @@
+Lab 4 Answers
+
+Q1. Without a volume, /mlflow-data is in the container's writable layer. It is deleted with the container, so a new container starts empty (no models in the UI).
+
+Q2. A named volume is managed by Docker, is portable across OSes, and avoids host path/permission and SQLite file-locking problems. A bind mount could work for local dev, but it is less portable and puts mlflow.db/artifacts in the repo.
+
+Q3. Compose creates a private network with embedded DNS that registers each service name as a hostname, so "mlflow" resolves to the mlflow container. In Lab 3 mlflow ran on the host, so the container had no DNS name for it.
+
+Q4. An env var makes the image reusable. "inference" only resolves inside Compose; with docker run alone it would fail, so the URL must be configurable without rebuilding.
+
+Q5. Only humans need to reach mlflow and the frontend. Inference is called only by the frontend over the internal Compose network via http://inference:8000, so no host port is needed (this also keeps the model API private).
+
+Q6. serve.py loads the model at import time. If mlflow is not ready (or the model is missing), load_model raises, uvicorn exits, and the container shows Exited (1) with a traceback in the logs. I saw RESOURCE_DOES_NOT_EXIST. Fix: healthcheck + depends_on condition service_healthy, or retries and restart: on-failure.
+
+Q7. mlflow shows 0.0.0.0:5000->5000/tcp and frontend shows 0.0.0.0:8501->8501/tcp. inference shows only 8000/tcp (no host mapping). This matches the compose file.
+
+Q8. The prediction stays on the old version until inference restarts, because the model is loaded once at startup. "docker compose restart inference" picks up the new version (I used the alias "champion" instead of the deprecated Staging stage).
+
+Q9. The image contains only code and dependencies. The model is fetched from mlflow at container startup, so a new model version needs only a restart, not a rebuild.
+
+Q10. After "down" then "up", the model and alias were still there because the named volume survives. After "down -v" the volume was deleted and recreated empty, so the registry was empty and inference crashed until I re-registered the model.
+
+Q11. Compose cannot give multi-machine scheduling, real load balancing, or self-healing. For 3 inference replicas you need a load balancer/reverse proxy and an orchestrator (Kubernetes/Swarm). For mlflow to survive machine failure you need a networked DB (Postgres/MySQL) instead of SQLite, remote artifact storage (S3), and multiple instances.
